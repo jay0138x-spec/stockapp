@@ -1,78 +1,34 @@
 "use client";
-import React,{useState,useEffect}from"react";
-import{Activity,BookOpen,RefreshCw,Search,ExternalLink,TrendingUp,TrendingDown,DollarSign,AlertCircle}from"lucide-react";
+import React,{useState,useEffect,useMemo}from"react";
+import{Activity,AlertCircle,BookOpen,Clock,DollarSign,ExternalLink,FolderPlus,RefreshCw,Search,Tag,TrendingDown,TrendingUp,X}from"lucide-react";
+type Candle={date:string;open:number;high:number;low:number;close:number;volume?:number};
+type Indicators={ma5?:number|null;ma10?:number|null;ma20?:number|null;ma60?:number|null;ma240?:number|null};
+type RiskPlan={stopLoss?:number|null;takeProfit?:number|null;positionNote?:string};
+type Revenue={month:string;mom:string;yoy:string};
+type Stock={id:string;name:string;price:number;change:number;changePercent:number;asOf?:string;themes:string[];candles?:Candle[];indicators?:Indicators;morphology:string;morphologyDesc:string;risk?:RiskPlan;aiRating:string;aiAnalysis:string;revenue:Revenue;news:{date:string;title:string}[]};
 
-type Stock={id:string;name:string;price:number;change:number;changePercent:number;themes:string[]};
+const api={fetchQuote:async(s:string)=>{try{const t=new Date(),y=t.getFullYear(),m=String(t.getMonth()+1).padStart(2,"0"),d=String(t.getDate()).padStart(2,"0");const r=await fetch(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_date=${y}-${m}-${d}&stock_id=${s}`);const d2=await r.json();if(!d2.data||d2.data.length==0)return null;const st=d2.data[0],ch=st.close-st.yesterday_close,chp=ch/st.yesterday_close*100;return{name:st.stock_id,price:st.close,change:ch,changePercent:chp,asOf:st.date};}catch{return null;}},fetchCandles:async(s:string,m=18)=>{try{const e=new Date(),s2=new Date();s2.setMonth(s2.getMonth()-m);const f=(d:Date)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;const r=await fetch(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&start_date=${f(s2)}&end_date=${f(e)}&stock_id=${s}`);const d=await r.json();if(!d.data||d.data.length==0)return[];return d.data.sort((a:any,b:any)=>new Date(a.date)-new Date(b.date)).map((i:any)=>({date:i.date,open:i.open,high:i.high,low:i.low,close:i.close,volume:i.volume}));}catch{return[]}}};
 
-const api={
-  fetchQuote:async(s:string)=>{
-    try{
-      const r=await fetch("/api/quote?symbol="+s);
-      return r.ok?await r.json():null;
-    }catch{return null;}
-  }
-};
+const fmt=(n:number,d=1)=>Number.isFinite(n)?n.toFixed(d):"--";
+const c=(n:number)=>n>=0?"text-red-500":"text-green-500";
+const sma=(v:number[],p:number)=>{if(v.length<p)return null;let s=0;for(let i=v.length-p;i<v.length;i++)s+=v[i];return s/p;};
+const calc=(c:Candle[]):Indicators=>{const c2=c.map(x=>x.close);return{ma5:sma(c2,5),ma10:sma(c2,10),ma20:sma(c2,20),ma60:sma(c2,60),ma240:sma(c2,240)}};
+const infer=(p:number,i:Indicators)=>{const{ma5,ma10,ma60}=i;if(ma5&&ma10&&p>=ma5&&ma5>=ma10)return{m:"沿5MA上攻(多方)",d:"短線強勢，守MA10"};if(ma60&&p<ma60)return{m:"跌破生命線(偏空)",d:"偏空思維"};return{m:"區間整理",d:"觀察為主"}};
 
-export default function SaraApp(){
-  const[stocks,setStocks]=useState<Stock[]>([
-    {id:"2330",name:"台積電",price:0,change:0,changePercent:0,themes:["半導體","AI"]},
-    {id:"3372",name:"典範",price:0,change:0,changePercent:0,themes:["半導體"]}
-  ]);
-  const[selected,setSelected]=useState<Stock>(stocks[0]);
-  const[search,setSearch]=useState("");
-  const[loading,setLoading]=useState(false);
+const init:Stock[]=[{id:"3019",name:"亞光",price:112.5,change:4.5,changePercent:4.16,themes:["機器人","光學"],morphology:"多方",morphologyDesc:"技術面偏多",revenue:{month:"18.2億",mom:"+8.5%",yoy:"+15.2%"},aiRating:"強烈買進",aiAnalysis:"AI評分88/100",news:[]},{id:"2634",name:"漢翔",price:51.2,change:-1.5,changePercent:-2.84,themes:["軍工","航太"],morphology:"偏空",morphologyDesc:"跌破支撐",revenue:{month:"32.5億",mom:"-4.2%",yoy:"+2.1%"},aiRating:"保守觀望",aiAnalysis:"AI評分42/100",news:[]}];
 
-  const f=(n:number)=>n.toFixed(2);
-  const c=(n:number)=>n>=0?"text-red-500":"text-green-500";
+const Pill=({l,v}:{l:string;v?:number|null})=><div className="bg-slate-50 border p-3 rounded-xl"><div className="text-xs text-slate-500">{l}</div><div className="font-black">{v==null?"--":v.toFixed(2)}</div></div>;
+const Stat=({l,v,u}:{l:string;v:string;u:boolean})=><div className="bg-slate-50 p-3 rounded-xl border"><div className="text-xs text-slate-500">{l}</div><div className={`font-bold ${u?"text-red-500":"text-green-500"}`}>{v}</div></div>;
+const Num=({l,v,p,C}:{l:string;v?:number|null;p:string;C:(v:number|null)=>void})=><div><div className="text-xs font-bold text-slate-500 mb-2">{l}</div><input type="number"inputMode="decimal"className="w-full px-3 py-2 rounded-lg border text-sm"placeholder={p}value={v??""||""}onChange={e=>{const r=e.target.value;if(r==="")C(null);const n=Number(r);C(Number.isFinite(n)?n:null);}}/></div>;
+const Row=({s,sel,on}:{s:Stock;sel:boolean;on:()=>void})=><div onClick={on}className={`p-4 border-b cursor-pointer ${sel?"bg-pink-50 border-l-4 border-l-pink-500":"hover:bg-slate-50"}`}><div className="flex justify-between"><div className="font-bold">{s.name}<span className="text-xs text-slate-400 ml-1">{s.id}</span></div><div className={c(s.change)}>{fmt(s.change,1)}</div></div><div className="flex justify-between text-sm"><div className="text-slate-500">{s.morphology.split(" ")[0]}</div><div className={c(s.change)}>{s.change>=0?"+":""}{fmt(s.change,1)}({s.change>=0?"+":""}{fmt(s.changePercent,2)}%)</div></div></div>;
+const Chart=({cs}:{cs?:Candle[]})=>{if(!cs?.length)return<div className="h-40 flex items-center justify-center text-slate-400 bg-slate-50 rounded-xl">點擊更新分析載入K線</div>;const w=900,h=180,pad=10,sl=cs.slice(-60),hs=sl.map(x=>x.high),ls=sl.map(x=>x.low),mx=Math.max(...hs),mn=Math.min(...ls),rng=Math.max(1e-9,mx-mn),xs=w/sl.length,Y=(p:number)=>h-pad-(p-mn)/rng*(h-pad*2);return<div className="bg-white p-4 rounded-2xl border shadow-sm"><div className="font-bold mb-3 flex items-center gap-2"><Activity className="w-4 h-4"/>日線K線(60根)</div><svg viewBox={`0 0 ${w} ${h}`} className="w-full h-44 bg-slate-50 rounded-xl">{sl.map((k,i)=>{const x=i*xs+xs/2,iu=k.close>=k.open,bt=Y(Math.max(k.open,k.close)),bb=Y(Math.min(k.open,k.close)),wt=Y(k.high),wb=Y(k.low),bh=Math.max(1,bb-bt),bw=Math.max(4,Math.min(14,xs*0.55)),st=iu?"#ef4444":"#22c55e";return<g key={k.date}><line x1={x} y1={wt} x2={x} y2={wb} stroke={st} strokeWidth="2"/><rect x={x-bw/2} y={bt} width={bw} height={bh} fill={st} rx={2}/></g>;})}</svg></div>};
 
-  useEffect(()=>{syncData();},[]);
+export default function App(){const[list,setList]=useState(init);const[sel,setSel]=useState(init[0]?.id||"");const st=useMemo(()=>list.find(s=>s.id===sel)||null,[list,sel]);const[sea,setSea]=useState("");const[lib,setLib]=useState(false);const[ci,setCi]=useState("");const[load,setLoad]=useState(false);const[ana,setAna]=useState(false);const[last,setLast]=useState(new Date().toLocaleTimeString("zh-TW"));
+useEffect(()=>{setLast(new Date().toLocaleTimeString("zh-TW"));},[sel]);const patch=(id:string,p:Partial<Stock>)=>setList(prev=>prev.map(s=>s.id===id?{...s,...p}:s));const upR=(id:string,r:Partial<RiskPlan>)=>setList(prev=>prev.map(s=>s.id===id?{...s,risk:{...s.risk||{},...r}}:s));
+const sync=async()=>{setLoad(true);try{for(const s of list){const q=await api.fetchQuote(s.id).catch(()=>null);if(q)patch(s.id,{price:q.price,change:q.change,changePercent:q.changePercent,asOf:q.asOf});}}finally{setLoad(false);setLast(new Date().toLocaleTimeString("zh-TW"));}};
+const refresh=async(id:string)=>{const s=list.find(x=>x.id===id);if(!s)return;setAna(true);try{const cs=await api.fetchCandles(id,18).catch(()=>[]);const ind=cs.length?calc(cs):s.indicators||{};const lc=cs.length?cs[cs.length-1].close:s.price;const m=infer(lc,ind);patch(id,{candles:cs,indicators:ind,price:lc,morphology:m.m,morphologyDesc:m.d});setLast(new Date().toLocaleTimeString("zh-TW"));}finally{setAna(false);}};
 
-  const syncData=async()=>{
-    setLoading(true);
-    const updated=await Promise.all(stocks.map(async(s)=>{
-      const q=await api.fetchQuote(s.id);
-      if(!q)return s;
-      return{...s,price:q.price||s.price,change:q.change||s.change,changePercent:q.changePercent||s.changePercent};
-    }));
-    setStocks(updated);
-    setSelected(updated.find(x=>x.id===selected.id)||updated[0]);
-    setLoading(false);
-  };
-
-  return(
-    <div className="flex h-screen bg-gray-50">
-      <div className="w-64 bg-white border-r p-4 flex flex-col">
-        <h1 className="text-lg font-bold flex items-center gap-2"><Activity className="text-pink-500"/>莎拉看盤</h1>
-        <button onClick={syncData}disabled={loading}className="mt-2 flex items-center justify-center gap-1 bg-pink-500 text-white p-2 rounded text-sm">
-          <RefreshCw className={`w-4 h-4 ${loading?"animate-spin":""}`}/>{loading?"更新中...":"更新報價"}
-        </button>
-        <input type="text"placeholder="搜尋"className="w-full mt-4 p-2 border rounded"value={search}onChange={e=>setSearch(e.target.value)}/>
-        <div className="flex-1 overflow-auto mt-2">
-          {stocks.filter(s=>s.name.includes(search)||s.id.includes(search)).map(s=>(
-            <div key={s.id}onClick={()=>setSelected(s)}className={`p-3 cursor-pointer border-b ${s.id===selected.id?"bg-pink-50":""}`}>
-              <div className="font-bold">{s.name}<span className="text-gray-400 text-sm ml-1">{s.id}</span></div>
-              <div className={c(s.change)}>{s.change>=0?"+":""}{f(s.change)} ({s.change>=0?"+":""}{f(s.changePercent)}%)</div>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="flex-1 p-8 overflow-auto">
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex justify-between items-center mb-6">
-            <div><h2 className="text-3xl font-bold">{selected.name}</h2><span className="text-gray-500">{selected.id}</span></div>
-            <a href={"https://tw.stock.yahoo.com/"+selected.id}target="_blank"className="flex items-center gap-1 text-sm text-gray-500"><ExternalLink className="w-4 h-4"/>Yahoo</a>
-          </div>
-          <div className={`text-5xl font-bold ${c(selected.change)}`}>{f(selected.price)}</div>
-          <div className={`flex items-center gap-2 ${c(selected.change)}`}>
-            {selected.change>=0?<TrendingUp className="w-6 h-6"/>:<TrendingDown className="w-6 h-6"/>}
-            <span className="text-xl">{selected.change>=0?"+":""}{f(selected.change)} ({selected.change>=0?"+":""}{f(selected.changePercent)}%)</span>
-          </div>
-          <div className="mt-6 flex gap-2">{selected.themes.map(t=><span key={t}className="px-3 py-1 bg-gray-100 rounded text-sm">{t}</span>)}</div>
-        </div>
-        <div className="bg-white p-6 rounded-lg shadow mt-6"><h3 className="font-bold flex items-center gap-2"><BookOpen className="w-5 h-5"/>型態分析</h3><p className="mt-2 text-gray-600">請按「更新報價」載入資料</p></div>
-        <div className="bg-white p-6 rounded-lg shadow mt-6"><h3 className="font-bold flex items-center gap-2"><DollarSign className="w-5 h-5"/>營收</h3><p className="mt-2 text-gray-600">待串接API</p></div>
-        <div className="bg-white p-6 rounded-lg shadow mt-6"><h3 className="font-bold flex items-center gap-2"><AlertCircle className="w-5 h-5"/>停損停利</h3><p className="mt-2 text-gray-600">待串接API</p></div>
-      </div>
-    </div>
-  );
-}
+return(<div className="flex h-screen bg-slate-50 font-sans"><div className="w-80 bg-white border-r flex flex-col"><div className="p-5 border-b bg-slate-900 text-white relative"><h1 className="text-xl font-bold flex items-center gap-2"><Activity className="text-pink-400"/>莎拉型態學 AI 看盤</h1><p className="text-xs text-slate-400 mt-1">K線 x 均線 x 停損停利</p><button onClick={sync}disabled={load}className="absolute right-4 top-5 p-2 bg-slate-800 rounded-full"><RefreshCw className={`w-4 h-4 ${load?"animate-spin":""}`}/></button><div className="flex items-center gap-1 mt-3 text-xs text-slate-500"><Clock className="w-3 h-3"/>{load?"連線中...":last}</div></div><div className="p-4"><div className="relative"><Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400"/><input type="text"placeholder="搜尋"className="w-full pl-9 p-2 bg-slate-100 rounded-lg text-sm"value={sea}onChange={e=>setSea(e.target.value)}/></div></div><div className="flex-1 overflow-auto">{list.filter(s=>s.name.includes(sea)||s.id.includes(sea)).map(s=><Row key={s.id}s={s}sel={s.id===sel}on={()=>setSel(s.id)}/>)}</div><div className="p-4 border-t"><button onClick={()=>setLib(true)}className="w-full py-2.5 bg-slate-900 text-white rounded-lg text-sm">股票檔案庫</button></div></div>
+<div className="flex-1 overflow-auto p-8">{!st?<div className="text-slate-400">請選擇股票</div>:<div className="max-w-5xl mx-auto space-y-6"><div className="flex justify-between items-end bg-white p-6 rounded-2xl shadow-sm"><div><div className="flex items-center gap-3 mb-2"><h2 className="text-3xl font-black">{st.name}</h2><span className="text-lg text-slate-500">{st.id}</span><a href={`https://tw.stock.yahoo.com/${st.id}`}target="_blank"className="flex items-center gap-1 px-2 py-1 bg-slate-100 rounded text-xs"><ExternalLink className="w-3 h-3"/>Yahoo</a><button onClick={()=>refresh(st.id)}disabled={ana}className="flex items-center gap-1 px-2 py-1 bg-pink-50 rounded text-xs font-bold">{ana?"分析中":"更新分析"}</button></div><div className="flex gap-2">{st.themes.map(t=><span key={t}className="px-2 py-1 bg-slate-100 rounded text-xs">{t}</span>)}</div></div><div className="text-right"><div className={`text-5xl font-black ${c(st.change)}`}>{fmt(st.price,1)}</div><div className={`flex items-center gap-1 ${c(st.change)}`}>{st.change>=0?<TrendingUp className="w-5 h-5"/>:<TrendingDown className="w-5 h-5"/>}{st.change>=0?"+":""}{fmt(st.change,1)}({st.change>=0?"+":""}{fmt(st.changePercent,2)}%)</div></div></div><Chart cs={st.candles}/><div className="grid grid-cols-3 gap-6"><div className="col-span-2 space-y-6"><div className="bg-white p-6 rounded-2xl shadow-sm"><div className="flex items-center gap-2 mb-4"><BookOpen className="w-5 h-5"/><h3 className="font-bold">型態判斷</h3></div><span className={`inline-block px-3 py-1 rounded-full text-sm font-bold ${st.morphology.includes("多方")?"bg-red-100 text-red-700":"bg-yellow-100 text-yellow-700"}`}>{st.morphology}</span><p className="mt-3 text-slate-600">{st.morphologyDesc}</p><div className="mt-5 grid grid-cols-3 gap-3"><Pill l="MA5"v={st.indicators?.ma5}/><Pill l="MA10"v={st.indicators?.ma10}/><Pill l="MA20"v={st.indicators?.ma20}/><Pill l="MA60"v={st.indicators?.ma60}/><Pill l="MA240"v={st.indicators?.ma240}/></div></div></div><div className="space-y-6"><div className="bg-white p-6 rounded-2xl shadow-sm"><div className="flex items-center gap-2 mb-4"><DollarSign className="w-5 h-5"/><h3 className="font-bold">營收</h3></div><div className="grid grid-cols-2 gap-4"><Stat l="月營收"v={st.revenue.month}u={true}/><Stat l="年增"v={st.revenue.yoy}u={st.revenue.yoy.includes("+")}/></div></div><div className="bg-white p-6 rounded-2xl shadow-sm"><div className="flex items-center gap-2 mb-4"><AlertCircle className="w-5 h-5"/><h3 className="font-bold">停損停利</h3></div><div className="space-y-3"><Num l="停損"v={st.risk?.stopLoss}p="98.5"C={v=>upR(st.id,{stopLoss:v})}/><Num l="停利"v={st.risk?.takeProfit}p="128"C={v=>upR(st.id,{takeProfit:v})}/></div></div></div></div></div></div></div>;
+if(lib)return<div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4"><div className="bg-white max-w-2xl rounded-2xl shadow-2xl max-h-[80vh] overflow-auto"><div className="p-5 border-b flex justify-between items-center bg-slate-50"><div className="flex items-center gap-2"><FolderPlus className="w-5 h-5"/><h2 className="text-xl font-bold">股票檔案庫</h2></div><button onClick={()=>setLib(false)}><X className="w-5 h-5"/></button></div><div className="p-4 bg-slate-100"><div className="flex gap-2"><input type="text"value={ci}onChange={e=>setCi(e.target.value)}placeholder="輸入代碼"className="flex-1 px-4 py-2 rounded-lg border"/><button onClick={()=>{const c=ci.trim();if(/^\d{4,6}$/.test(c)&&!list.some(s=>s.id===c)){setList(prev=>[...prev,{id:c,name:`股${c}`,price:0,change:0,changePercent:0,themes:["自訂"],morphology:"待判斷",morphologyDesc:"已加入",revenue:{month:"--",mom:"--",yoy:"--"},aiRating:"中立",aiAnalysis:"等待
+...(truncated)...
